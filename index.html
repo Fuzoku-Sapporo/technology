@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>魚の自動給餌コントローラー</title>
+    <style>
+        body { font-family: 'Helvetica Neue', Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f7f6; color: #333; }
+        .container { max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { font-size: 24px; color: #0288d1; margin-bottom: 30px; }
+        button { font-size: 18px; padding: 12px 24px; margin: 10px; width: 80%; cursor: pointer; border: none; border-radius: 25px; font-weight: bold; transition: 0.3s; }
+        .connect-btn { background-color: #0288d1; color: white; }
+        .connect-btn:hover { background-color: #01579b; }
+        .feed-btn { background-color: #ff9800; color: white; }
+        .feed-btn:hover { background-color: #f57c00; }
+        .feed-btn:disabled { background-color: #cccccc; color: #666666; cursor: not-allowed; }
+        #status { margin-top: 20px; font-weight: bold; color: #666; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🐟 リモートエサやり機</h1>
+        
+        <button class="connect-btn" id="connect">1. micro:bitと接続</button>
+        <br>
+        <button class="feed-btn" id="feed" disabled>2. エサをあげる</button>
+        
+        <div id="status">状態: 未接続</div>
+    </div>
+
+    <script>
+        // micro:bitのBluetooth UART機能の固有ID（固定値）
+        const UART_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+        const TX_CHARACTERISTIC_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+        let txCharacteristic = null;
+
+        // 1. 接続ボタンを押したときの処理
+        document.getElementById('connect').addEventListener('click', async () => {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerText = "接続中...";
+            
+            try {
+                // 周辺のmicro:bitを検索
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ namePrefix: 'BBC micro:bit' }],
+                    optionalServices: [UART_SERVICE_UUID]
+                });
+                
+                // Bluetoothサーバーに接続
+                const server = await device.gpt.connect();
+                // サービスを取得
+                const service = await server.getPrimaryService(UART_SERVICE_UUID);
+                // 文字を送るためのパーツ（特性）を取得
+                txCharacteristic = await service.getCharacteristic(TX_CHARACTERISTIC_UUID);
+
+                statusDiv.innerText = "状態: 接続完了！";
+                statusDiv.style.color = "#4caf50";
+                document.getElementById('feed').disabled = false; // エサやりボタンを解禁
+            } catch (error) {
+                console.error(error);
+                statusDiv.innerText = "状態: 接続失敗 / キャンセル";
+                statusDiv.style.color = "#f44336";
+            }
+        });
+
+        // 2. エサやりボタンを押したときの処理
+        document.getElementById('feed').addEventListener('click', async () => {
+            if (!txCharacteristic) return;
+
+            // micro:bitの「区切り文字（改行コード）」に合わせて末尾に「\n」をつける
+            const encoder = new TextEncoder();
+            const data = encoder.encode('feed\n'); 
+            
+            try {
+                await txCharacteristic.writeValue(data);
+                document.getElementById('status').innerText = "状態: エサやり信号を送信しました！";
+                setTimeout(() => {
+                    if(txCharacteristic) document.getElementById('status').innerText = "状態: 接続完了！";
+                }, 2000);
+            } catch (error) {
+                console.error(error);
+                document.getElementById('status').innerText = "状態: 送信エラー";
+            }
+        });
+    </script>
+</body>
+</html>
